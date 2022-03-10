@@ -102,6 +102,12 @@ namespace DSharpPlus.Entities
         private DiscordChannel _channel;
 
         /// <summary>
+        /// Gets the guild in which the message was sent.
+        /// </summary>
+        [JsonIgnore]
+        public DiscordGuild Guild => this.Channel.Guild;
+
+        /// <summary>
         /// Gets the ID of the channel in which the message was sent.
         /// </summary>
         [JsonProperty("channel_id", NullValueHandling = NullValueHandling.Ignore)]
@@ -441,6 +447,13 @@ namespace DSharpPlus.Entities
             }
             this._mentionedUsers = mentionedUsers.ToList();
         }
+
+        /// <summary>
+        /// Gets the DiscordMember of the author of this message if it is in a guild.
+        /// </summary>
+        /// <returns></returns>
+        public Task<DiscordMember> GetMemberAsync() =>
+            this.Guild.GetMemberAsync(this.Author.Id);
 
         /// <summary>
         /// Edits the message.
