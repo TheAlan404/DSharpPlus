@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -173,6 +173,10 @@ namespace DSharpPlus.SlashCommands
                         foreach (var subclassinfo in classes)
                         {
                             //Gets the attribute and methods in the group
+
+                            var allowDMs = subclassinfo.GetCustomAttribute<GuildOnlyAttribute>() is null;
+                            var v2Permissions = subclassinfo.GetCustomAttribute<SlashCommandPermissionsAttribute>()?.Permissions;
+
                             var groupAttribute = subclassinfo.GetCustomAttribute<SlashCommandGroupAttribute>();
                             var submethods = subclassinfo.DeclaredMethods.Where(x => x.GetCustomAttribute<SlashCommandAttribute>() != null);
                             var subclasses = subclassinfo.DeclaredNestedTypes.Where(x => x.GetCustomAttribute<SlashCommandGroupAttribute>() != null);
@@ -186,7 +190,7 @@ namespace DSharpPlus.SlashCommands
                             AddContextMenus(contextMethods);
 
                             //Initializes the command
-                            var payload = new DiscordApplicationCommand(groupAttribute.Name, groupAttribute.Description, defaultPermission: groupAttribute.DefaultPermission);
+                            var payload = new DiscordApplicationCommand(groupAttribute.Name, groupAttribute.Description, defaultPermission: groupAttribute.DefaultPermission, allowDMUsage: allowDMs, defaultMemberPermissions: v2Permissions);
 
                             var commandmethods = new List<KeyValuePair<string, MethodInfo>>();
                             //Handles commands in the group
@@ -202,9 +206,12 @@ namespace DSharpPlus.SlashCommands
 
                                 var options = await this.ParseParameters(parameters, guildId);
 
+                                var nameLocalizations = this.GetNameLocalizations(submethod);
+                                var descriptionLocalizations = this.GetDescriptionLocalizations(submethod);
+
                                 //Creates the subcommand and adds it to the main command
-                                var subpayload = new DiscordApplicationCommandOption(commandAttribute.Name, commandAttribute.Description, ApplicationCommandOptionType.SubCommand, null, null, options);
-                                payload = new DiscordApplicationCommand(payload.Name, payload.Description, payload.Options?.Append(subpayload) ?? new[] { subpayload }, payload.DefaultPermission);
+                                var subpayload = new DiscordApplicationCommandOption(commandAttribute.Name, commandAttribute.Description, ApplicationCommandOptionType.SubCommand, null, null, options, name_localizations: nameLocalizations, description_localizations: descriptionLocalizations);
+                                payload = new DiscordApplicationCommand(payload.Name, payload.Description, payload.Options?.Append(subpayload) ?? new[] { subpayload }, payload.DefaultPermission, allowDMUsage: allowDMs, defaultMemberPermissions: v2Permissions);
 
                                 //Adds it to the method lists
                                 commandmethods.Add(new(commandAttribute.Name, submethod));
@@ -234,8 +241,13 @@ namespace DSharpPlus.SlashCommands
                                     parameters = parameters.Skip(1).ToArray();
                                     suboptions = suboptions.Concat(await this.ParseParameters(parameters, guildId)).ToList();
 
-                                    var subsubpayload = new DiscordApplicationCommandOption(commatt.Name, commatt.Description, ApplicationCommandOptionType.SubCommand, null, null, suboptions);
+                                    var nameLocalizations = this.GetNameLocalizations(subsubmethod);
+                                    var descriptionLocalizations = this.GetDescriptionLocalizations(subsubmethod);
+
+                                    var subsubpayload = new DiscordApplicationCommandOption(commatt.Name, commatt.Description, ApplicationCommandOptionType.SubCommand, null, null, suboptions, name_localizations: nameLocalizations, description_localizations: descriptionLocalizations);
                                     options.Add(subsubpayload);
+
+
                                     commandmethods.Add(new(commatt.Name, subsubmethod));
                                     currentMethods.Add(new(commatt.Name, subsubmethod));
                                 }
@@ -247,7 +259,7 @@ namespace DSharpPlus.SlashCommands
                                 //Adds the group to the command and method lists
                                 var subpayload = new DiscordApplicationCommandOption(subGroupAttribute.Name, subGroupAttribute.Description, ApplicationCommandOptionType.SubCommandGroup, null, null, options);
                                 command.SubCommands.Add(new() { Name = subGroupAttribute.Name, Methods = currentMethods });
-                                payload = new DiscordApplicationCommand(payload.Name, payload.Description, payload.Options?.Append(subpayload) ?? new[] { subpayload }, payload.DefaultPermission);
+                                payload = new DiscordApplicationCommand(payload.Name, payload.Description, payload.Options?.Append(subpayload) ?? new[] { subpayload }, payload.DefaultPermission, allowDMUsage: allowDMs, defaultMemberPermissions: v2Permissions);
 
                                 //Accounts for lifespans for the sub group
                                 if (subclass.GetCustomAttribute<SlashModuleLifespanAttribute>() is not null and { Lifespan: SlashModuleLifespan.Singleton })
@@ -286,7 +298,13 @@ namespace DSharpPlus.SlashCommands
 
                                 commandMethods.Add(new() { Method = method, Name = commandattribute.Name });
 
-                                var payload = new DiscordApplicationCommand(commandattribute.Name, commandattribute.Description, options, commandattribute.DefaultPermission);
+                                var nameLocalizations = this.GetNameLocalizations(method);
+                                var descriptionLocalizations = this.GetDescriptionLocalizations(method);
+
+                                var allowDMs = (method.GetCustomAttribute<GuildOnlyAttribute>() ?? method.DeclaringType.GetCustomAttribute<GuildOnlyAttribute>()) is null;
+                                var v2Permissions = (method.GetCustomAttribute<SlashCommandPermissionsAttribute>() ?? method.DeclaringType.GetCustomAttribute<SlashCommandPermissionsAttribute>())?.Permissions;
+
+                                var payload = new DiscordApplicationCommand(commandattribute.Name, commandattribute.Description, options, commandattribute.DefaultPermission, name_localizations: nameLocalizations, description_localizations: descriptionLocalizations, allowDMUsage: allowDMs, defaultMemberPermissions: v2Permissions);
                                 updateList.Add(payload);
                             }
 
@@ -306,7 +324,9 @@ namespace DSharpPlus.SlashCommands
                             foreach (var contextMethod in contextMethods)
                             {
                                 var contextAttribute = contextMethod.GetCustomAttribute<ContextMenuAttribute>();
-                                var command = new DiscordApplicationCommand(contextAttribute.Name, null, type: contextAttribute.Type, defaultPermission: contextAttribute.DefaultPermission);
+                                var allowDMUsage = (contextMethod.GetCustomAttribute<GuildOnlyAttribute>() ?? contextMethod.DeclaringType.GetCustomAttribute<GuildOnlyAttribute>()) is null;
+                                var permissions = (contextMethod.GetCustomAttribute<SlashCommandPermissionsAttribute>() ?? contextMethod.DeclaringType.GetCustomAttribute<SlashCommandPermissionsAttribute>())?.Permissions;
+                                var command = new DiscordApplicationCommand(contextAttribute.Name, null, type: contextAttribute.Type, defaultPermission: contextAttribute.DefaultPermission, allowDMUsage: allowDMUsage, defaultMemberPermissions: permissions);
 
                                 var parameters = contextMethod.GetParameters();
                                 if (parameters?.Length is null or 0 || !ReferenceEquals(parameters.FirstOrDefault()?.ParameterType, typeof(ContextMenuContext)))
@@ -413,15 +433,31 @@ namespace DSharpPlus.SlashCommands
                 var minimum = parameter.GetCustomAttribute<MinimumAttribute>()?.Value ?? null;
                 var maximum = parameter.GetCustomAttribute<MaximumAttribute>()?.Value ?? null;
 
+                var nameLocalizations = this.GetNameLocalizations(parameter);
+                var descriptionLocalizations = this.GetDescriptionLocalizations(parameter);
+
                 var autocompleteAttribute = parameter.GetCustomAttribute<AutocompleteAttribute>();
                 if (autocompleteAttribute != null && autocompleteAttribute.Provider.GetMethod(nameof(IAutocompleteProvider.Provider)) == null)
                     throw new ArgumentException("Autocomplete providers must inherit from IAutocompleteProvider.");
 
-                options.Add(new DiscordApplicationCommandOption(optionattribute.Name, optionattribute.Description, parametertype, !parameter.IsOptional, choices, null, channelTypes, (autocompleteAttribute != null || optionattribute.Autocomplete), minimum, maximum));
+                options.Add(new DiscordApplicationCommandOption(optionattribute.Name, optionattribute.Description, parametertype, !parameter.IsOptional, choices, null, channelTypes, (autocompleteAttribute != null || optionattribute.Autocomplete), minimum, maximum, nameLocalizations, descriptionLocalizations));
             }
 
             return options;
         }
+
+        private IReadOnlyDictionary<string, string> GetNameLocalizations(ICustomAttributeProvider method)
+        {
+            var nameAttributes = (NameLocalizationAttribute[])method.GetCustomAttributes(typeof(NameLocalizationAttribute), false);
+            return nameAttributes.ToDictionary(nameAttribute => nameAttribute.Locale, nameAttribute => nameAttribute.Name);
+        }
+
+        private IReadOnlyDictionary<string, string> GetDescriptionLocalizations(ICustomAttributeProvider method)
+        {
+            var descriptionAttributes = (DescriptionLocalizationAttribute[])method.GetCustomAttributes(typeof(DescriptionLocalizationAttribute), false);
+            return descriptionAttributes.ToDictionary(descriptionAttribute => descriptionAttribute.Locale, descriptionAttribute => descriptionAttribute.Description);
+        }
+
 
         //Gets the choices from a choice provider
         private async Task<List<DiscordApplicationCommandOptionChoice>> GetChoiceAttributesFromProvider(

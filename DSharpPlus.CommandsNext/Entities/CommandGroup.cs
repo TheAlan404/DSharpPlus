@@ -37,12 +37,12 @@ namespace DSharpPlus.CommandsNext
         /// <summary>
         /// Gets all the commands that belong to this module.
         /// </summary>
-        public IReadOnlyList<Command> Children { get; internal set; }
+        public IReadOnlyList<Command> Children { get; internal set; } = Array.Empty<Command>();
 
         /// <summary>
         /// Gets whether this command is executable without subcommands.
         /// </summary>
-        public bool IsExecutableWithoutSubcommands => this.Overloads?.Any() == true;
+        public bool IsExecutableWithoutSubcommands => this.Overloads.Count > 0;
 
         internal CommandGroup() : base() { }
 
@@ -54,18 +54,17 @@ namespace DSharpPlus.CommandsNext
         public override async Task<CommandResult> ExecuteAsync(CommandContext ctx)
         {
             var findpos = 0;
-            var cn = CommandsNextUtilities.ExtractNextArgument(ctx.RawArgumentString, ref findpos);
+            var cn = CommandsNextUtilities.ExtractNextArgument(ctx.RawArgumentString, ref findpos, ctx.Config.QuotationMarks);
 
             if (cn != null)
             {
-                var (comparison, comparer) = ctx.Config.CaseSensitive switch
-                {
-                    true  => (StringComparison.InvariantCulture, StringComparer.InvariantCulture),
-                    false => (StringComparison.InvariantCultureIgnoreCase, StringComparer.InvariantCultureIgnoreCase)
-                };
-                var cmd = this.Children.FirstOrDefault(xc =>
-                    xc.Name.Equals(cn, comparison) || (xc.Aliases != null && xc.Aliases.Contains(cn, comparer)));
-                if (cmd != null)
+                var (comparison, comparer) = ctx.Config.CaseSensitive
+                    ? (StringComparison.InvariantCulture, StringComparer.InvariantCulture)
+                    : (StringComparison.InvariantCultureIgnoreCase, StringComparer.InvariantCultureIgnoreCase);
+
+                var cmd = this.Children.FirstOrDefault(xc => xc.Name.Equals(cn, comparison) || xc.Aliases.Contains(cn, comparer));
+
+                if (cmd is not null)
                 {
                     // pass the execution on
                     var xctx = new CommandContext
@@ -81,25 +80,25 @@ namespace DSharpPlus.CommandsNext
                     };
 
                     var fchecks = await cmd.RunChecksAsync(xctx, false).ConfigureAwait(false);
-                    return fchecks.Any()
-                        ? new CommandResult
+                    return !fchecks.Any()
+                        ? await cmd.ExecuteAsync(xctx).ConfigureAwait(false)
+                        : new CommandResult
                         {
                             IsSuccessful = false,
                             Exception = new ChecksFailedException(cmd, xctx, fchecks),
                             Context = xctx
-                        }
-                        : await cmd.ExecuteAsync(xctx).ConfigureAwait(false);
+                        };
                 }
             }
 
-            return !this.IsExecutableWithoutSubcommands
-                ? new CommandResult
+            return this.IsExecutableWithoutSubcommands
+                ? await base.ExecuteAsync(ctx).ConfigureAwait(false)
+                : new CommandResult
                 {
                     IsSuccessful = false,
                     Exception = new InvalidOperationException("No matching subcommands were found, and this group is not executable."),
                     Context = ctx
-                }
-                : await base.ExecuteAsync(ctx).ConfigureAwait(false);
+                };
         }
     }
 }

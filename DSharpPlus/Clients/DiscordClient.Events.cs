@@ -661,7 +661,7 @@ namespace DSharpPlus
         private AsyncEvent<DiscordClient, ThreadDeleteEventArgs> _threadDeleted;
 
         /// <summary>
-        /// Fired when the current member gains access to a channel(s).
+        /// Fired when the current member gains access to a channel(s) that has threads.
         /// For this Event you need the <see cref="DiscordIntents.Guilds"/> intent specified in <seealso cref="DiscordConfiguration.Intents"/>
         /// </summary>
         public event AsyncEventHandler<DiscordClient, ThreadListSyncEventArgs> ThreadListSynced
@@ -672,9 +672,13 @@ namespace DSharpPlus
         private AsyncEvent<DiscordClient, ThreadListSyncEventArgs> _threadListSynced;
 
         /// <summary>
-        /// Fired when a thread member is updated.
+        /// Fired when the thread member for the current user is updated.
         /// For this Event you need the <see cref="DiscordIntents.Guilds"/> intent specified in <seealso cref="DiscordConfiguration.Intents"/>
         /// </summary>
+        /// <remarks>
+        /// This event is mostly documented for completeness, and it not fired every time
+        /// DM channels in which no prior messages were received or sent.
+        /// </remarks>
         public event AsyncEventHandler<DiscordClient, ThreadMemberUpdateEventArgs> ThreadMemberUpdated
         {
             add => this._threadMemberUpdated.Register(value);
@@ -729,6 +733,15 @@ namespace DSharpPlus
             remove => this._applicationCommandDeleted.Unregister(value);
         }
         private AsyncEvent<DiscordClient, ApplicationCommandEventArgs> _applicationCommandDeleted;
+
+        [Obsolete("This event may be removed by discord and may not fire anymore.", false)]
+        public event AsyncEventHandler<DiscordClient, ApplicationCommandPermissionsUpdatedEventArgs> ApplicationCommandPermissionsUpdated
+        {
+            add => this._applicationCommandPermissionsUpdated.Register(value);
+            remove => this._applicationCommandPermissionsUpdated.Unregister(value);
+        }
+
+        private AsyncEvent<DiscordClient, ApplicationCommandPermissionsUpdatedEventArgs> _applicationCommandPermissionsUpdated;
 
         #endregion
 

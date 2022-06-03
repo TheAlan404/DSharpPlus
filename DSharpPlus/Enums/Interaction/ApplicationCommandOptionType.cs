@@ -79,7 +79,7 @@ namespace DSharpPlus
         Number,
 
         /// <summary>
-        /// Whether this parameter is an attachment
+        /// Whether this parameter is a Discord attachment.
         /// </summary>
         Attachment
     }
